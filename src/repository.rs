@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 const PASSWORD_MANAGER_PREFIX: &str = "backups";
 const PASSWORD_LENGTH: i64 = 32;
-const BACKUP_REPO_DIRECTORY: &str = "/archive/"; // my NAS!
+const BACKUP_REPO_DIRECTORY: &str = "/archive"; // my NAS!
 
 /// An initialized borg backup repository.
 #[derive(Debug)]
@@ -55,7 +55,7 @@ impl Repository {
         let password_entry = Self::generate_password(&repo_name);
         let repo_path = PathBuf::from(format!("{BACKUP_REPO_DIRECTORY}/{repo_name}"));
 
-        cmd!("borg", "init", "--encryption", "repokey", &repo_path)
+        cmd!("borg", "init", "--encryption", "repokey", dbg!(&repo_path))
             .env("BORG_PASSCOMMAND", format!("pass show {password_entry}"))
             .run()
             .expect("failed to init borg repo");
@@ -84,7 +84,7 @@ impl Repository {
             "borg",
             "create",
             "--verbose",
-            "--stats",
+            "--json",
             self.archive_name(backup_name),
             &self.backup_target
         )

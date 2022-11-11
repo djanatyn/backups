@@ -1,39 +1,16 @@
 use std::io;
 
 mod args;
+mod bucket;
+mod manifest;
 mod repository;
+mod systemd;
+
 use crate::args::{Action, Args, Init};
+use crate::bucket::Bucket;
+use crate::manifest::Manifest;
 use crate::repository::Repository;
-
-pub struct SystemdCreds {}
-impl SystemdCreds {
-    pub fn new(repo: &Repository) -> SystemdCreds {
-        todo!();
-    }
-}
-
-pub struct Bucket {}
-impl Bucket {
-    pub fn new(repo: &Repository) -> Bucket {
-        todo!();
-    }
-
-    pub fn sync(&self) {
-        todo!();
-    }
-}
-
-pub struct Manifest {
-    pub repo: Repository,
-    pub bucket: Bucket,
-    pub creds: SystemdCreds,
-}
-
-impl Manifest {
-    pub fn save(&self) {
-        todo!();
-    }
-}
+use crate::systemd::SystemdCreds;
 
 /// Initialize a borg repository and run the first backup!
 fn init(args: Init) -> io::Result<()> {
