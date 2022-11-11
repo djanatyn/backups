@@ -27,11 +27,10 @@ struct Args {
 /// What command?
 #[derive(Subcommand, Debug)]
 enum Action {
-    /// Initialize a borg backup repository.
     Init(Init),
 }
 
-/// Initialize a backup repository.
+/// Initialize a backup repository, and run the first backup.
 #[derive(Parser, Debug)]
 struct Init {
     /// What should the repository be named?
