@@ -135,7 +135,7 @@ impl Repository {
     }
 }
 
-/// Initialize a backup!
+/// Initialize a borg repository and run the first backup!
 fn init(args: Init) -> io::Result<()> {
     let repo = Repository::new(args.name, args.path);
     repo.backup("initial backup");
