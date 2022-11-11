@@ -27,90 +27,118 @@ struct Args {
 /// What command?
 #[derive(Subcommand, Debug)]
 enum Action {
-    /// Initialize a database.
+    /// Initialize a borg backup repository.
     Init(Init),
 }
 
-/// Initialize a backup.
+/// Initialize a backup repository.
 #[derive(Parser, Debug)]
 struct Init {
-    /// Name of backup.
+    /// What should the repository be named?
     #[arg(short, long)]
     name: String,
 
-    /// Path to directory to back up.
+    /// What files should be backed up?
     #[arg(short, long)]
     path: PathBuf,
 }
 
-/// Generate password, add to password manager.
-///
-/// Returns name of generated password.
-fn generate_password(name: &String) -> String {
-    let path = format!("{PASSWORD_MANAGER_PREFIX}/{name}/password");
-
-    cmd!(
-        "pwgen",
-        "-1",
-        "--symbols",
-        "--secure",
-        PASSWORD_LENGTH.to_string()
-    )
-    .pipe(cmd!("pass", "insert", "--multiline", &path))
-    .run()
-    .expect("failed to run");
-
-    path
+/// An initialized borg backup repository.
+#[derive(Debug)]
+struct Repository {
+    /// What is the name of the repository?
+    repo_name: String,
+    /// Where is it stored?
+    repo_path: PathBuf,
+    /// What files does this repository backup?
+    backup_target: PathBuf,
+    /// What is the password manager entry to unlock this repository?
+    password_entry: String,
 }
 
-/// Initialize a borg repository in `BACKUP_REPO_DIRECTORY`.
-///
-/// Returns path to initialized repository.
-///
-/// The "password" argument is a reference to the entry in a password manager,
-/// not a literal secret.
-fn borg_init_repo(repo_name: &String, password: &String) -> PathBuf {
-    let pass_command = format!("pass show {password}");
-    let backup_directory = format!("{BACKUP_REPO_DIRECTORY}/{repo_name}");
-
-    cmd!("borg", "init", "--encryption", "repokey", &backup_directory)
-        .env("BORG_PASSCOMMAND", pass_command)
+impl Repository {
+    /// Generate password, add entry to password manager.
+    /// Returns path to password entry.
+    fn generate_password(name: &String) -> String {
+        let path = format!("{PASSWORD_MANAGER_PREFIX}/{name}/password");
+        cmd!(
+            "pwgen",
+            "-1",
+            "--symbols",
+            "--secure",
+            PASSWORD_LENGTH.to_string()
+        )
+        .pipe(cmd!("pass", "insert", "--multiline", &path))
         .run()
-        .expect("failed to init borg repo");
+        .expect("failed to run");
 
-    PathBuf::from(backup_directory)
-}
+        path
+    }
 
-/// Run a borg backup.
-fn borg_run_backup(
-    backup_name: &String,
-    borg_repo_path: &PathBuf,
-    files_to_backup: &PathBuf,
-    password: &String,
-) {
-    let pass_command = format!("pass show {password}");
-    let archive = format!("{0}::{backup_name}", borg_repo_path.display());
+    /// Save the borg repository key in the password manager.
+    fn save_borg_key(&self) {
+        let path = format!("{PASSWORD_MANAGER_PREFIX}/{0}/borg-key", self.repo_name);
+        cmd!("borg", "key", "export", &self.repo_path)
+            .env(
+                "BORG_PASSCOMMAND",
+                format!("pass show {0}", self.password_entry),
+            )
+            .pipe(cmd!("pass", "insert", "--multiline", &path))
+            .run()
+            .expect("failed to export key");
+    }
 
-    cmd!(
-        "borg",
-        "create",
-        "--verbose",
-        "--stats",
-        archive,
-        files_to_backup
-    )
-    .env("BORG_PASSCOMMAND", pass_command)
-    .run()
-    .expect("failed to init borg repo");
+    /// Initialize repository.
+    pub fn new(repo_name: String, backup_target: PathBuf) -> Repository {
+        let password_entry = Self::generate_password(&repo_name);
+        let repo_path = PathBuf::from(format!("{BACKUP_REPO_DIRECTORY}/{repo_name}"));
 
-    // TODO: store borg key
+        cmd!("borg", "init", "--encryption", "repokey", &repo_path)
+            .env("BORG_PASSCOMMAND", format!("pass show {password_entry}"))
+            .run()
+            .expect("failed to init borg repo");
+
+        // repository is initialized
+        let repo = Repository {
+            repo_name,
+            repo_path,
+            backup_target,
+            password_entry,
+        };
+
+        // save the repository key before returning!
+        repo.save_borg_key();
+        repo
+    }
+
+    /// Construct name for archive using repository path.
+    pub fn archive_name(&self, name: &str) -> String {
+        format!("{0}::{name}", self.repo_path.display())
+    }
+
+    /// Run a backup!
+    pub fn backup(&self, backup_name: &str) {
+        cmd!(
+            "borg",
+            "create",
+            "--verbose",
+            "--stats",
+            self.archive_name(backup_name),
+            &self.backup_target
+        )
+        .env(
+            "BORG_PASSCOMMAND",
+            format!("pass show {0}", self.password_entry),
+        )
+        .run()
+        .expect("failed to run backup");
+    }
 }
 
 /// Initialize a backup!
 fn init(args: Init) -> io::Result<()> {
-    let pass = generate_password(&args.name);
-    let repo = borg_init_repo(&args.name, &pass);
-    borg_run_backup(&"initial backup".to_string(), &repo, &args.path, &pass);
+    let repo = Repository::new(args.name, args.path);
+    repo.backup("initial backup");
 
     // TODO: store borg key in password manager,
     // TODO: generate systemd-creds,
